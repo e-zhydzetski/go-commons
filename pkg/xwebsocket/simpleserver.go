@@ -11,11 +11,11 @@ import (
 )
 
 type Server struct {
-	ListenAddr *net.TCPAddr
+	addr *net.TCPAddr
 }
 
-func (s Server) ListenPort() int {
-	return s.ListenAddr.Port
+func (s Server) Port() int {
+	return s.addr.Port
 }
 
 func StartSimpleServer(ctx context.Context, g *errgroup.Group, addr string, sessionFactoryFunc WSSessionFactoryFunc) (*Server, error) {
@@ -83,6 +83,6 @@ func StartSimpleServer(ctx context.Context, g *errgroup.Group, addr string, sess
 	})
 
 	return &Server{
-		ListenAddr: ln.Addr().(*net.TCPAddr),
+		addr: ln.Addr().(*net.TCPAddr),
 	}, nil
 }

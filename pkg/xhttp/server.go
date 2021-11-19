@@ -2,28 +2,25 @@ package xhttp
 
 import (
 	"context"
-	"errors"
 	"golang.org/x/sync/errgroup"
 	"net"
 	"net/http"
 )
 
 type Server struct {
-	addrCh chan *net.TCPAddr
-	addr   *net.TCPAddr
+	addr *net.TCPAddr
 }
 
-func (s *Server) ListeningPort() (int, error) {
-	if s.addr == nil {
-		s.addr = <-s.addrCh
-	}
-	if s.addr == nil {
-		return 0, errors.New("server not listening")
-	}
-	return s.addr.Port, nil
+func (s Server) Port() int {
+	return s.addr.Port
 }
 
-func StartServer(ctx context.Context, g *errgroup.Group, addr string, handler http.Handler) *Server {
+func StartServer(ctx context.Context, g *errgroup.Group, addr string, handler http.Handler) (*Server, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
 	server := &http.Server{
 		Addr:    addr,
 		Handler: handler,
@@ -35,18 +32,11 @@ func StartServer(ctx context.Context, g *errgroup.Group, addr string, handler ht
 		<-ctx.Done()
 		return server.Shutdown(context.Background()) // wait forever for live connections, maybe add timeout
 	})
-	addrCh := make(chan *net.TCPAddr, 1)
 	g.Go(func() error { // modified part of server.ListenAndServer
-		defer close(addrCh)
-		ln, err := net.Listen("tcp", server.Addr)
-		if err != nil {
-			return err
-		}
-		addrCh <- ln.Addr().(*net.TCPAddr)
 		return server.Serve(ln)
 	})
 
 	return &Server{
-		addrCh: addrCh,
-	}
+		addr: ln.Addr().(*net.TCPAddr),
+	}, nil
 }
