@@ -2,19 +2,39 @@ package xchan
 
 import (
 	"sync"
+	"time"
 )
 
-func MakeSafe() *Safe {
-	return &Safe{
-		ch:       make(chan interface{}),
-		closedCh: make(chan struct{}),
+type Opt func(safe *Safe)
+
+func WithTestRetard(pauseDuration time.Duration) Opt {
+	return func(safe *Safe) {
+		safe.testRetarder = func() {
+			time.Sleep(pauseDuration)
+		}
 	}
 }
 
+func MakeSafe(opts ...Opt) *Safe {
+	s := &Safe{
+		ch:           make(chan interface{}),
+		closedCh:     make(chan struct{}),
+		testRetarder: func() {}, // default without retarder
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
 type Safe struct {
-	mx       sync.RWMutex
-	ch       chan interface{}
+	mx sync.RWMutex
+	ch chan interface{}
+
+	closeMx  sync.Mutex
 	closedCh chan struct{}
+
+	testRetarder func()
 }
 
 func (s *Safe) Ch() <-chan interface{} {
@@ -22,11 +42,19 @@ func (s *Safe) Ch() <-chan interface{} {
 }
 
 func (s *Safe) Close() bool {
-	select {
-	case <-s.closedCh:
+	if alreadyClosed := func() bool {
+		s.closeMx.Lock()
+		defer s.closeMx.Unlock()
+		select {
+		case <-s.closedCh:
+			return true
+		default:
+			s.testRetarder() // for concurrent close test
+			close(s.closedCh)
+		}
 		return false
-	default:
-		close(s.closedCh)
+	}(); alreadyClosed {
+		return false
 	}
 	s.mx.Lock()
 	close(s.ch)
